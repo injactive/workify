@@ -5,39 +5,42 @@ import datetime
 import math
 import numpy as np
 
+# CONSTANTS
+PATH_TO_DB = 'workinghours.db'
 
-# Verbindung zur SQLite-Datenbank herstellen oder erstellen (falls nicht vorhanden)
-conn = sqlite3.connect('arbeitszeiten.db')
 
-# Datenbanktabelle für Projekte erstellen (falls nicht vorhanden)
+conn = sqlite3.connect(PATH_TO_DB)
+
+# SQL table "projects" for name and cost-id
 conn.execute('''
     CREATE TABLE IF NOT EXISTS projects (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        Name TEXT,
-        Cost_Id TEXT
+        name TEXT,
+        cost_id TEXT
     )
 ''')
 
-# Datenbanktabelle für Arbeitszeiten erstellen (falls nicht vorhanden)
+# SQL table "work_log" for connecting time and work
 conn.execute('''
     CREATE TABLE IF NOT EXISTS work_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        Datum TEXT,
-        Uhrzeit TEXT,
-        Projekt_id INTEGER,
-        Comment TEXT,
-        FOREIGN KEY (Projekt_id) REFERENCES projects(id)
+        date TEXT,
+        time TEXT,
+        projekt_id INTEGER,
+        comment TEXT,
+        FOREIGN KEY (projekt_id) REFERENCES projects(id)
     )
 ''')
 
 conn.execute('''
     CREATE TABLE IF NOT EXISTS workday_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        Datum TEXT,
-        Uhrzeit TEXT,
-        Status TEXT
+        date TEXT,
+        time TEXT,
+        status TEXT
     )
 ''')
+
 
 # Streamlit-App-Titel
 st.title("Arbeitszeiten-Verwaltung")
@@ -47,7 +50,7 @@ page = st.sidebar.selectbox("Seiten", ["Overview", "Projekte", "Arbeitszeiten", 
 
 # Funktion zum Verbinden zur Datenbank
 def get_connection():
-    return sqlite3.connect('arbeitszeiten.db', check_same_thread=False)
+    return sqlite3.connect(PATH_TO_DB, check_same_thread=False)
 
 # Funktion zum Erstellen des Tabelle-Datenframes
 def create_timetable_df(selected_week):
@@ -77,10 +80,10 @@ def create_timetable_df(selected_week):
     # Laden Sie die Arbeitszeiten aus der Datenbank basierend auf der ausgewählten Kalenderwoche
 #    with get_connection() as conn:
     query = """
-        SELECT Datum, Uhrzeit, projects.Name AS Projekt
+        SELECT date, time, projects.name AS Projekt
         FROM work_log
-        LEFT JOIN projects ON work_log.Projekt_id = projects.id
-        WHERE strftime('%W', Datum) = ?
+        LEFT JOIN projects ON work_log.projekt_id = projects.id
+        WHERE strftime('%W', date) = ?
     """
     df = pd.read_sql(query, conn, params=(selected_week,))
     print(df)
@@ -89,8 +92,8 @@ def create_timetable_df(selected_week):
 
     # Füllen Sie die Tabelle mit den Arbeitszeiten
     for index, row in df.iterrows():
-        date = row["Datum"]
-        time = row["Uhrzeit"]
+        date = row["date"]
+        time = row["time"]
         time_str = datetime.datetime.strptime(time, '%H:%M')
         project = row["Projekt"]
         date_obj = datetime.datetime.strptime(date, '%Y-%m-%d')
@@ -100,15 +103,15 @@ def create_timetable_df(selected_week):
         timetable_df.loc[time_str.strftime("%H:%M"), weekday] = project
     
     query = """
-        SELECT Datum, Uhrzeit, Status
+        SELECT date, time, status
         FROM workday_log
-        WHERE strftime('%W', Datum) = ?
+        WHERE strftime('%W', date) = ?
     """
     df = pd.read_sql(query, conn, params=(selected_week,))
     for index, row in df.iterrows():
-        date_obj = datetime.datetime.strptime(row["Datum"], '%Y-%m-%d')
+        date_obj = datetime.datetime.strptime(row["date"], '%Y-%m-%d')
         weekday = weekdays[english_weekdays.index(date_obj.strftime("%A"))]
-        tmp_time = row["Uhrzeit"]
+        tmp_time = row["time"]
         if int(tmp_time[3]) < 3:
             tmp_time = tmp_time[:3] + "00"
         elif int(tmp_time[3]) < 6:
@@ -116,12 +119,12 @@ def create_timetable_df(selected_week):
         else:
             tmp_time = tmp_time[:4] + "0"
         time_obj = datetime.datetime.strptime(tmp_time, '%H:%M')
-        if row["Status"] == "Start":
-            timetable_df.loc[times[times.index(time_obj) - 1].strftime("%H:%M"), weekday] = row["Uhrzeit"]
+        if row["status"] == "Start":
+            timetable_df.loc[times[times.index(time_obj) - 1].strftime("%H:%M"), weekday] = row["time"]
             for time in times[:times.index(time_obj) - 1]:
                 timetable_df.loc[time.strftime("%H:%M"), weekday] = "/"
         if row["Status"] == "Ende":
-            timetable_df.loc[times[times.index(time_obj)+1].strftime("%H:%M"), weekday] = row["Uhrzeit"]
+            timetable_df.loc[times[times.index(time_obj)+1].strftime("%H:%M"), weekday] = row["time"]
             for time in times[times.index(time_obj)+2:]:
                 timetable_df.loc[time.strftime("%H:%M"), weekday] = "/"
 
@@ -161,22 +164,22 @@ if page == "Projekte":
     new_cid = st.text_input("Cost_Id hinzufügen:")
     if st.button("Projekt hinzufügen"):
         with get_connection() as conn:
-            conn.execute("INSERT INTO projects (Name, Cost_Id) VALUES (?, ?)", (new_project, new_cid))
+            conn.execute("INSERT INTO projects (name, cost_id) VALUES (?, ?)", (new_project, new_cid))
             conn.commit()
         st.success("Projekt hinzugefügt!")
 
     # Eingabeformular zum Entfernen von Projekten
-    project_names = [row[0] for row in get_connection().execute("SELECT Name FROM projects").fetchall()]
+    project_names = [row[0] for row in get_connection().execute("SELECT name FROM projects").fetchall()]
     project_to_remove = st.selectbox("Projekt zum Entfernen auswählen:", project_names)
     if st.button("Projekt entfernen"):
         with get_connection() as conn:
-            conn.execute("DELETE FROM projects WHERE Name=?", (project_to_remove,))
+            conn.execute("DELETE FROM projects WHERE name=?", (project_to_remove,))
             conn.commit()
         st.success("Projekt entfernt!")
 
     # Liste der aktuellen Projekte
     st.subheader("Aktuelle Projekte:")
-    projects = [row[0] + ": " + row[1] for row in get_connection().execute("SELECT Name, Cost_Id FROM projects").fetchall()]
+    projects = [row[0] + ": " + row[1] for row in get_connection().execute("SELECT name, cost_id FROM projects").fetchall()]
 
 
     if projects:
@@ -188,12 +191,12 @@ elif page == "Arbeitszeiten":
 
     # Dropdown-Menü zur Auswahl des Projekts
     with get_connection() as conn:
-        project_names = pd.read_sql("SELECT Name FROM projects", conn)["Name"].tolist()
+        project_names = pd.read_sql("SELECT name FROM projects", conn)["name"].tolist()
     selected_project = st.selectbox("Projekt auswählen:", project_names)
 
     # Eingabeformular für neue Arbeitszeit
-    date = st.date_input("Datum:", datetime.date.today())
-    time = st.time_input("Uhrzeit:")#, datetime.datetime.now().time())
+    date = st.date_input("date:", datetime.date.today())
+    time = st.time_input("time:")#, datetime.datetime.now().time())
 
     date_str = date.strftime("%d/%m/%Y")
     time_str = time.strftime("%H:%M")
@@ -210,11 +213,11 @@ elif page == "Arbeitszeiten":
     if st.button("Eintrag hinzufügen"):
         with get_connection() as conn:
             cursor = conn.cursor()
-            project_id = cursor.execute("SELECT id FROM projects WHERE Name=?", (selected_project,)).fetchone()
+            project_id = cursor.execute("SELECT id FROM projects WHERE name=?", (selected_project,)).fetchone()
             
             if project_id is not None:
                 project_id = project_id[0]
-                cursor.execute("INSERT INTO work_log (Datum, Uhrzeit, Projekt_id) VALUES (?, ?, ?)", (date, time_str, project_id))
+                cursor.execute("INSERT INTO work_log (date, time, projekt_id) VALUES (?, ?, ?)", (date, time_str, project_id))
                 conn.commit()
                 st.success("Eintrag hinzugefügt: Am " + date_str + " um " + time_str)
             else:
@@ -228,7 +231,7 @@ elif page == "Arbeitszeiten":
         with get_connection() as conn:
             cursor = conn.cursor()
 
-            cursor.execute("INSERT INTO workday_log (Datum, Uhrzeit, Status) VALUES (?, ?, ?)", (date, time_begin_str, "Start"))
+            cursor.execute("INSERT INTO workday_log (date, time, status) VALUES (?, ?, ?)", (date, time_begin_str, "Start"))
             conn.commit()
             st.success("Arbeitsbeginn erfasst: " + time_begin_str + " Uhr")
 
@@ -241,7 +244,7 @@ elif page == "Arbeitszeiten":
         with get_connection() as conn:
             cursor = conn.cursor()
 
-            cursor.execute("INSERT INTO workday_log (Datum, Uhrzeit, Status) VALUES (?, ?, ?)", (date, time_end_str, "Ende"))
+            cursor.execute("INSERT INTO workday_log (date, time, status) VALUES (?, ?, ?)", (date, time_end_str, "Ende"))
             conn.commit()
             st.success("Arbeitsende erfasst: " + time_end_str + " Uhr")
 
@@ -253,9 +256,9 @@ elif page == "Statistik":
 
     # Arbeitszeit-Statistik abrufen
     query = """
-    SELECT projects.Name AS Projekt, SUM(work_log.Uhrzeit) AS Arbeitszeit
+    SELECT projects.name AS Projekt, SUM(work_log.time) AS Arbeitszeit
     FROM work_log
-    JOIN projects ON work_log.Projekt_id = projects.id
+    JOIN projects ON work_log.projekt_id = projects.id
     GROUP BY Projekt
     """
     statistics = pd.read_sql(query, conn)
@@ -263,5 +266,5 @@ elif page == "Statistik":
     if not statistics.empty:
         st.bar_chart(statistics.set_index("Projekt"))
 
-# Datenbankverbindung schließen
+
 conn.close()
