@@ -2,7 +2,6 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 import datetime
-import math
 import numpy as np
 
 # CONSTANTS
@@ -43,30 +42,24 @@ def create_timetable_df(selected_week: int, path_to_db: str) -> pd.DataFrame:
         consists of all projects hourwise 
     ''' 
 
-    current_year = datetime.datetime.now().year
-    first_day_of_week = datetime.datetime.fromisocalendar(current_year, int(selected_week), 1)
-    dates_of_week = [first_day_of_week]
-    for i in range(1, 5):
-        date = first_day_of_week + datetime.timedelta(days=i)
-        dates_of_week.append(date)
 
-    weekdays = ["Mo (" + dates_of_week[0].strftime("%d.%m.") + ")"]
-    weekdays.append("Di (" + dates_of_week[1].strftime("%d.%m.") + ")")
-    weekdays.append("Mi (" + dates_of_week[2].strftime("%d.%m.") + ")")
-    weekdays.append("Do (" + dates_of_week[3].strftime("%d.%m.") + ")")
-    weekdays.append("Fr (" + dates_of_week[4].strftime("%d.%m.") + ")")
+    current_year = datetime.datetime.now().year
+    selected_week = int(selected_week)
+    first_day_of_week = datetime.datetime.fromisocalendar(current_year, selected_week, 1)
+    dates_of_week = [first_day_of_week + datetime.timedelta(days=i) for i in range(5)]
+
+    weekdays = [f"{date.strftime('%a (%d.%m.)')}" for date in dates_of_week]
     
-    # Erstellen Sie eine Liste von Uhrzeiten im 30-Minuten-Takt von 07:30 bis 20:00 Uhr
+    # Create a list of times in 30-minute increments from 7:30 a.m. to 8:00 p.m
     times = [datetime.datetime.strptime("07:30", "%H:%M")]
     while times[-1] < datetime.datetime.strptime("20:00", "%H:%M"):
         times.append(times[-1] + datetime.timedelta(minutes=30))
 
-    # Erstellen Sie einen leeren DataFrame mit den Wochentagen als Spalten
+    # Create an empty DataFrame with the days of the week as columns
     timetable_df = pd.DataFrame(columns=weekdays, index=[time.strftime("%H:%M") for time in times])    
     timetable_df = timetable_df.replace(np.nan, '', regex=True)
 
-    # Laden Sie die Arbeitszeiten aus der Datenbank basierend auf der ausgewählten Kalenderwoche
-#    with get_connection() as conn:
+    # Load working hours from the database based on the selected calendar week
     query = """
         SELECT date, time, projects.name AS Projekt
         FROM work_log
@@ -78,7 +71,7 @@ def create_timetable_df(selected_week: int, path_to_db: str) -> pd.DataFrame:
     
     english_weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
 
-    # Füllen Sie die Tabelle mit den Arbeitszeiten
+    # Fill DataFrame with working hours
     for index, row in df.iterrows():
         date = row["date"]
         time = row["time"]
@@ -120,40 +113,51 @@ def create_timetable_df(selected_week: int, path_to_db: str) -> pd.DataFrame:
 
     return timetable_df
 
-# Connect to SQL database
-conn = sqlite3.connect(PATH_TO_DB)
+def check_db_connection(path_to_db: str) -> None:
+    '''
+    Checks existence of SQL database. If no existence, create a DB
+    
+    Parameters
+    -----------
+    path_to_db : str
+        string gives the path to the database
+    ''' 
 
-# SQL table "projects" for name and cost-id
-conn.execute('''
-    CREATE TABLE IF NOT EXISTS projects (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT,
-        cost_id TEXT
-    )
-''')
+    with get_connection(path_to_db) as conn:
 
-# SQL table "work_log" for connecting time and work
-conn.execute('''
-    CREATE TABLE IF NOT EXISTS work_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT,
-        time TEXT,
-        projekt_id INTEGER,
-        comment TEXT,
-        FOREIGN KEY (projekt_id) REFERENCES projects(id)
-    )
-''')
+        # SQL table "projects" for name and cost-id
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS projects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT,
+                cost_id TEXT
+            )
+        ''')
 
-# SQL table "workday_log" to log start and end of day
-conn.execute('''
-    CREATE TABLE IF NOT EXISTS workday_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT,
-        time TEXT,
-        status TEXT
-    )
-''')
+        # SQL table "work_log" for connecting time and work
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS work_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT,
+                time TEXT,
+                projekt_id INTEGER,
+                comment TEXT,
+                FOREIGN KEY (projekt_id) REFERENCES projects(id)
+            )
+        ''')
 
+        # SQL table "workday_log" to log start and end of day
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS workday_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT,
+                time TEXT,
+                status TEXT
+            )
+        ''')
+
+
+check_db_connection(PATH_TO_DB)
 
 # Define Streamlit App
 st.title("Worktime Management")
@@ -167,9 +171,6 @@ page = st.sidebar.selectbox(
         "Statistics"
     ]
 )
-
-conn.close()
-
 
 if page == "Overview":
     """
@@ -289,5 +290,3 @@ elif page == "Statistics":
 
     if not statistics.empty:
         st.bar_chart(statistics.set_index("Projekt"))
-
-
