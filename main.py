@@ -4,6 +4,8 @@ import pandas as pd
 import datetime
 import numpy as np
 
+pd.options.mode.copy_on_write = True
+
 # CONSTANTS
 PATH_TO_DB = 'workinghours.db'
 
@@ -56,7 +58,7 @@ def create_timetable_df(selected_week: int, path_to_db: str) -> pd.DataFrame:
         times.append(times[-1] + datetime.timedelta(minutes=30))
 
     # Create an empty DataFrame with the days of the week as columns
-    timetable_df = pd.DataFrame(columns=weekdays, index=[time.strftime("%H:%M") for time in times])    
+    timetable_df = pd.DataFrame(columns=weekdays, index=[time.strftime("%H:%M") for time in times])
     timetable_df = timetable_df.replace(np.nan, '', regex=True)
 
     # Load working hours from the database based on the selected calendar week
@@ -64,10 +66,15 @@ def create_timetable_df(selected_week: int, path_to_db: str) -> pd.DataFrame:
         SELECT date, time, projects.name AS Projekt
         FROM work_log
         LEFT JOIN projects ON work_log.projekt_id = projects.id
-        WHERE strftime('%W', date) = ?
     """
     with get_connection(path_to_db) as conn:
-        df = pd.read_sql(query, conn, params=(selected_week,))
+        df = pd.read_sql(query, conn)
+
+    df["week"] = 0    
+    for ix, row in df.iterrows():
+        df.loc[ix, "week"] = datetime.datetime.strptime(row["date"], "%Y-%m-%d").isocalendar().week
+
+    df = df[df["week"] == selected_week].reset_index()
     
     english_weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
 
