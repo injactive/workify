@@ -281,19 +281,32 @@ elif page == "Working Time":
 # Seite "Statistik"
 elif page == "Statistics":
     st.header("Worktime Statistics")
-    current_week = datetime.datetime.now().strftime("%U")
+    current_month = datetime.datetime.now().strftime("%m")
 
-    selected_week = st.selectbox("Choose Calender No.:", range(1, 53), index=int(current_week)-1)
+    selected_month = st.selectbox("Choose Calender No.:", range(1, 13), index=int(current_month)-1)
 
     # Arbeitszeit-Statistik abrufen
     query = """
-    SELECT projects.name AS Projekt, SUM(work_log.time) AS Arbeitszeit
+    SELECT date, projects.name AS Projekt
     FROM work_log
     JOIN projects ON work_log.projekt_id = projects.id
-    GROUP BY Projekt
     """
     with get_connection(PATH_TO_DB) as conn:
-        statistics = pd.read_sql(query, conn)
+        df = pd.read_sql(query, conn)
+
+    df["month"] = 0    
+    for ix, row in df.iterrows():
+        df.loc[ix, "month"] = datetime.datetime.strptime(row["date"], "%Y-%m-%d").month
+
+    df = df[df["month"] == selected_month].reset_index()
+    
+    total_number = df.shape[0]
+    project_list = np.unique(df["Projekt"].values).tolist()
+#    project_list.remove()
+    statistics = pd.DataFrame(index = project_list , columns = ["Zeit"])
+
+    for project in project_list:
+        statistics.loc[project, "Zeit"] = df[df["Projekt"] == project]["Projekt"].count()*100/total_number
 
     if not statistics.empty:
-        st.bar_chart(statistics.set_index("Projekt"))
+        st.bar_chart(statistics)
