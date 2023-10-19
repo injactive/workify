@@ -44,7 +44,6 @@ def create_timetable_df(selected_week: int, path_to_db: str) -> pd.DataFrame:
         consists of all projects hourwise 
     ''' 
 
-
     current_year = datetime.datetime.now().year
     selected_week = int(selected_week)
     first_day_of_week = datetime.datetime.fromisocalendar(current_year, selected_week, 1)
@@ -63,7 +62,7 @@ def create_timetable_df(selected_week: int, path_to_db: str) -> pd.DataFrame:
 
     # Load working hours from the database based on the selected calendar week
     query = """
-        SELECT date, time, projects.name AS Projekt
+        SELECT date, time, comment, projects.name AS Projekt
         FROM work_log
         LEFT JOIN projects ON work_log.projekt_id = projects.id
     """
@@ -88,7 +87,11 @@ def create_timetable_df(selected_week: int, path_to_db: str) -> pd.DataFrame:
         weekday = weekdays[english_weekdays.index(date_obj.strftime("%A"))]
             
         # Setzen Sie den Wert in die entsprechende Zelle
-        timetable_df.loc[time_str.strftime("%H:%M"), weekday] = project
+        cell_input = project
+        if row["comment"] is not None:
+            cell_input += ": "
+            cell_input += row["comment"]
+        timetable_df.loc[time_str.strftime("%H:%M"), weekday] = cell_input
     
     query = """
         SELECT date, time, status
@@ -234,6 +237,8 @@ elif page == "Working Time":
         project_names = pd.read_sql("SELECT name FROM projects", conn)["name"].tolist()
     selected_project = st.selectbox("Projekt auswählen:", project_names)
 
+    comment = st.text_input("Add a comment:")
+
     st.text("Choose Action:")
     if st.button("Record Working Time and Project"):
 
@@ -256,7 +261,7 @@ elif page == "Working Time":
             
             if project_id is not None:
                 project_id = project_id[0]
-                cursor.execute("INSERT INTO work_log (date, time, projekt_id) VALUES (?, ?, ?)", (date, time_str, project_id))
+                cursor.execute("INSERT INTO work_log (date, time, projekt_id, comment) VALUES (?, ?, ?, ?)", (date, time_str, project_id, comment))
                 conn.commit()
                 st.success("Eintrag hinzugefügt: Am " + date_str + " um " + time_str)
             else:
